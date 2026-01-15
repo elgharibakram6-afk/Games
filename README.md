@@ -1,51 +1,132 @@
 # Games
-const fs = require('fs'), archiver = require('archiver'), path = require('path');
-const carpeta = path.join(__dirname,'akra-games');
-if(!fs.existsSync(carpeta)) fs.mkdirSync(carpeta);
 
-const archivos = {
-"index.html":`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Akra Games</title><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="manifest" href="manifest.json"><style>body{margin:0;background:#0b0f19;color:#fff;font-family:Arial}#loginScreen{padding:50px;text-align:center}button{padding:6px 10px;border:0;border-radius:6px;cursor:pointer;margin:3px}#adminPanel{display:none;position:fixed;top:70px;right:15px;width:280px;background:#1b1f3b;padding:10px;border-radius:8px;overflow:auto;max-height:90vh}</style></head><body>
-<div id="loginScreen"><h2>🎮 Bienvenido a Akra Games</h2><input id="usernameInput" placeholder="Nombre"/><button onclick="entrar()">Entrar</button></div>
-<button id="adminBtn" style="display:none">Admin</button>
+"<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Akra Games 500+</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{margin:0;font-family:Arial;background:#0b0f19;color:#fff}
+#search{margin:15px;padding:8px;width:calc(100% - 40px);border-radius:6px;border:none}
+#games{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:15px;padding:20px}
+.game{background:#11162a;border-radius:10px;padding:8px;text-align:center;position:relative;height:220px;transition:.3s}
+.game:hover{transform:scale(1.05)}
+.game img{width:120px;height:80px;border-radius:6px}
+.locked::after{content:"🔒";position:absolute;top:5px;right:5px}
+.jugado::after{content:"✔";position:absolute;top:5px;left:5px;color:#2ecc71}
+.premium{border:2px solid gold}
+.premium::before{content:"🔥";position:absolute;top:-8px;left:-8px}
+button{margin-top:4px;padding:4px 8px;border:0;border-radius:4px;background:#3498db;color:#fff;cursor:pointer;font-size:12px}
+#adminBtn{position:fixed;top:10px;left:10px;background:crimson;padding:6px 10px;border-radius:6px}
+#adminPanel{display:none;position:fixed;top:50px;right:10px;background:#1b1f3b;padding:15px;border-radius:10px;width:260px}
+.sub{font-size:11px;color:#f1c40f}
+</style>
+</head>
+<body>
+
+<button id="adminBtn" onclick="loginAdmin()">ADMIN</button>
+<input id="search" placeholder="Buscar juego..." oninput="filtrar()">
 <div id="games"></div>
+
 <div id="adminPanel">
-<h3>Admin</h3>
-<button onclick="verRankingGlobal()">Ranking</button>
-<button onclick="verUsuariosLogros()">Logros</button>
-<button onclick="expulsarJugador()">Expulsar</button>
-<button onclick="desbloquearTodos()">Desbloquear</button>
-<button onclick="activarPremium()">Premium ON</button>
-<button onclick="desactivarPremium()">Premium OFF</button>
-<button onclick="resetear()">Resetear</button>
-<input id="buscarJuego" placeholder="Buscar..." onkeyup="filtrarJuegos()"/>
-<div id="chatAdmin"></div><input id="chatAdminInput" placeholder="Mensaje" onkeydown="if(event.key==='Enter')enviarChatAdmin()">
+<h3>ADMIN</h3>
+<button onclick="adminAll()">Desbloquear TODO</button>
+<button onclick="darMedium()">Medium permanente</button>
+<button onclick="darPremium()">Premium permanente</button>
+<button onclick="expulsar()">Expulsar usuarios</button>
 </div>
-<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-<script src="main.js"></script>
-</body></html>`,
 
-"main.js":`// main.js simplificado (elimina referencias a monedas y niveles)`,
+<script>
+let admin=false;
+let filtro="";
+let progreso=JSON.parse(localStorage.getItem("progreso"))||{};
+let subs=JSON.parse(localStorage.getItem("subs"))||{};
+let permanente=JSON.parse(localStorage.getItem("perm"))||{};
 
-"server.js":`const express=require("express"),app=express(),http=require("http").createServer(app),io=require("socket.io")(http),cors=require("cors");
-app.use(cors());app.use(express.json());app.use(express.static("public"));
-const ADMIN_PASS="akraM2011";
-let usuariosPremium={},globalRanking={},expulsados={},chatMessages=[];
-app.post("/admin/login",(r,s)=>{r.body.pass===ADMIN_PASS?s.json({ok:true}):s.status(401).json({ok:false})});
-app.post("/admin/desbloquear",(r,s)=>{const u=r.body.user;if(!u)return s.status(400).json({ok:false});usuariosPremium[u]=Date.now()+60*24*60*60*1000;s.json({ok:true})});
-app.post("/admin/expulsar",(r,s)=>{const u=r.body.user;expulsados[u]=true;for(let [id,sk] of io.sockets.sockets)if(sk.userId===u){sk.emit("expulsado","Expulsado");sk.disconnect()}s.json({ok:true})});
-app.post("/ranking/update",(r,s)=>{const {user,juegos,horas}=r.body;globalRanking[user]={juegos,horas};s.json({ok:true})});
-app.get("/ranking",(r,s)=>{const ranking=Object.entries(globalRanking).sort((a,b)=>b[1].juegos-a[1].juegos||b[1].horas-a[1].horas).map(([user,d])=>({user,...d}));s.json(ranking)});
-io.on("connection",s=>{s.on("setUser",u=>{s.userId=u;if(expulsados[u]){s.emit("expulsado","Expulsado");s.disconnect()}});s.on("chat",m=>{chatMessages.push(m);io.emit("chat",m)});s.on("playerMove",d=>{s.broadcast.emit("playerMove",d)})});
-http.listen(process.env.PORT||3000,()=>console.log("Servidor activo"));`,
+let juegos=[];
+for(let i=1;i<=100;i++) juegos.push({n:`Basic ${i}`,t:"basic"});
+for(let i=1;i<=150;i++) juegos.push({n:`Medium ${i}`,t:"medium"});
+for(let i=1;i<=250;i++) juegos.push({n:`Premium ${i}`,t:"premium"});
 
-"package.json":`{"name":"akra-games","version":"1.0.0","main":"server.js","scripts":{"start":"node server.js"},"dependencies":{"express":"^4.18.2","socket.io":"^4.7.2","cors":"^2.8.5"}}`,
+function tiempo(ms){
+ if(ms<=0) return "Caducado";
+ let d=Math.floor(ms/86400000);
+ return d+" días";
+}
 
-"manifest.json":`{"name":"Akra Games","short_name":"AkraGames","start_url":"./index.html","display":"standalone","background_color":"#0b0f19","theme_color":"#3498db","icons":[{"src":"icon-192.png","sizes":"192x192","type":"image/png"},{"src":"icon-512.png","sizes":"512x512","type":"image/png"}]}`,
+function mostrar(){
+ let c=document.getElementById("games");
+ c.innerHTML="";
+ let now=Date.now();
+ juegos.filter(j=>j.n.toLowerCase().includes(filtro)).forEach(j=>{
+  let activo = permanente[j.t] || (subs[j.t] && subs[j.t]>now);
+  let locked = (j.t!="basic" && !admin && !activo);
+  c.innerHTML+=`
+  <div class="game ${locked?"locked":""} ${j.t=="premium"?"premium":""} ${progreso[j.n]?"jugado":""}">
+   <img src="https://via.placeholder.com/120x80">
+   <h4>${j.n}</h4>
+   <button onclick="${locked?"alert('Bloqueado')":"jugar('"+j.n+"')"}">
+    ${locked?"Bloqueado":"Jugar"}
+   </button>
+   ${!admin && j.t!="basic"?`<button onclick="sub('${j.t}')">Comprar 2 meses</button>`:""}
+   ${subs[j.t]&&!permanente[j.t]?`<div class="sub">⏳ ${tiempo(subs[j.t]-now)}</div>`:""}
+  </div>`;
+ });
+}
 
-"sw.js":`self.addEventListener('install',e=>{console.log('Service Worker instalado')});self.addEventListener('fetch',e=>{e.respondWith(fetch(e.request))});`
-};
+function jugar(n){
+ progreso[n]=true;
+ localStorage.setItem("progreso",JSON.stringify(progreso));
+ mostrar();
+}
 
-for(let n in archivos)fs.writeFileSync(path.join(carpeta,n),archivos[n]);
+function sub(t){
+ let add=60*24*60*60*1000;
+ subs[t]=(subs[t]&&subs[t]>Date.now()?subs[t]:Date.now())+add;
+ localStorage.setItem("subs",JSON.stringify(subs));
+ mostrar();
+}
 
-const output=fs.createWriteStream(path.join(__dirname,'akra-games.zip')),archive=archiver('zip',{zlib:{level:9}});
-archive.pipe(output);archive.directory(carpeta+'/',false);archive.finalize();
+function filtrar(){
+ filtro=document.getElementById("search").value.toLowerCase();
+ mostrar();
+}
+
+function loginAdmin(){
+ let p=prompt("Contraseña admin");
+ if(p==="akraM2011"){
+  admin=true;
+  document.getElementById("adminPanel").style.display="block";
+  mostrar();
+ }else alert("Incorrecta");
+}
+
+function adminAll(){
+ permanente.medium=true;
+ permanente.premium=true;
+ localStorage.setItem("perm",JSON.stringify(permanente));
+ mostrar();
+}
+
+function darMedium(){
+ permanente.medium=true;
+ localStorage.setItem("perm",JSON.stringify(permanente));
+ mostrar();
+}
+
+function darPremium(){
+ permanente.premium=true;
+ localStorage.setItem("perm",JSON.stringify(permanente));
+ mostrar();
+}
+
+function expulsar(){
+ localStorage.clear();
+ location.reload();
+}
+
+mostrar();
+</script>
+</body>
+</html>
